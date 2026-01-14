@@ -1,0 +1,146 @@
+Function InStrRevLO(sTexte As String, sRecherche As String) As Integer
+    ' Recherche la dernière occurrence de sRecherche dans sTexte (équivalent de InStrRev VBA)
+    If IsMissing(sTexte) Or IsMissing(sRecherche) Then
+        InStrRevLO = 0
+        Exit Function
+    End If
+    If sTexte = "" Or sRecherche = "" Then
+        InStrRevLO = 0
+        Exit Function
+    End If
+
+    Dim i As Integer
+    For i = Len(sTexte) To 1 Step -1
+        If Mid$(sTexte, i, Len(sRecherche)) = sRecherche Then
+            InStrRevLO = i
+            Exit Function
+        End If
+    Next i
+    InStrRevLO = 0
+End Function
+
+Sub EnregistrementIntelligent
+    Dim oDoc As Object
+    Dim sDocURL As String, sBaseName As String, sDir As String
+    Dim sCheminFichier As String, sNomFichier As String, sExtension As String
+    Dim aChemins() As String, sLigne As String
+    Dim i As Integer, sURL As String
+    Dim oFolderPicker As Object
+    Dim n As Integer, sChemin As String
+    Dim oFS As Object, oStream As Object
+
+    oDoc = ThisComponent
+    sDocURL = oDoc.URL
+    If sDocURL = "" Then
+        MsgBox "Veuillez enregistrer le document une première fois.", 48
+        Exit Sub
+    End If
+
+    ' Infos sur le fichier
+    sDocURL = ConvertFromURL(sDocURL)
+    sDir = Left$(sDocURL, InStrRevLO(sDocURL, "\"))
+    sBaseName = Mid$(sDocURL, InStrRevLO(sDocURL, "\") + 1)
+    sBaseName = Left$(sBaseName, InStrRevLO(sBaseName, ".") - 1)
+
+    ' Déterminer l'extension
+    If oDoc.supportsService("com.sun.star.text.TextDocument") Then
+        sExtension = ".odt"
+    ElseIf oDoc.supportsService("com.sun.star.sheet.SpreadsheetDocument") Then
+        sExtension = ".ods"
+    ElseIf oDoc.supportsService("com.sun.star.presentation.PresentationDocument") Then
+        sExtension = ".odp"
+    Else
+        MsgBox "Type de document non supporté."
+        Exit Sub
+    End If
+
+    ' Fichier de chemins
+    sCheminFichier = sDir & sBaseName & ".chemins.txt"
+
+    ' Lire les chemins si le fichier existe
+    If FileExists(sCheminFichier) Then
+        oFS = CreateUnoService("com.sun.star.ucb.SimpleFileAccess")
+        oStream = CreateUnoService("com.sun.star.io.TextInputStream")
+        oStream.setInputStream(oFS.openFileRead(ConvertToURL(sCheminFichier)))
+
+        n = 0
+        ReDim aChemins(0)
+        Do While Not oStream.isEOF()
+            sLigne = oStream.readLine()
+            If sLigne <> "" Then
+                aChemins(n) = sLigne
+                n = n + 1
+                ReDim Preserve aChemins(n)
+            End If
+        Loop
+        oStream.closeInput()
+    Else
+        ' Pas encore de chemins enregistrés → demander à l’utilisateur
+        MsgBox "Aucun chemin mémorisé. Veuillez en sélectionner un ou plusieurs. Cliquez sur Annuler pour terminer.", 64, "Sélection des chemins"
+
+        n = 0
+        ReDim aChemins(0)
+        Do
+            oFolderPicker = CreateUnoService("com.sun.star.ui.dialogs.FolderPicker")
+            oFolderPicker.setTitle("Sélectionnez un dossier de destination")
+
+            If oFolderPicker.execute() = 1 Then
+                sChemin = ConvertFromURL(oFolderPicker.getDirectory())
+                aChemins(n) = sChemin
+                n = n + 1
+                ReDim Preserve aChemins(n)
+            Else
+                Exit Do
+            End If
+        Loop
+
+        ' Écrire les chemins dans le fichier .chemins.txt
+        If n > 0 Then
+            oFS = CreateUnoService("com.sun.star.ucb.SimpleFileAccess")
+            oStream = CreateUnoService("com.sun.star.io.TextOutputStream")
+            oStream.setOutputStream(oFS.openFileWrite(ConvertToURL(sCheminFichier)))
+            For i = 0 To n - 1
+                oStream.writeString(aChemins(i) & Chr(13) & Chr(10))
+            Next i
+            oStream.closeOutput()
+        Else
+            MsgBox "Aucun chemin sélectionné. Opération annulée.", 48
+            Exit Sub
+        End If
+    End If
+
+	' Enregistrement dans tous les chemins
+	Dim sDate As String
+	sDate = Format(Now(), "YYYY-MM-DD")
+	sNomFichier = sDate & " - " & sBaseName
+
+
+    MsgBox "Fichier enregistré dans " & (UBound(aChemins)) & " emplacement(s)."
+End Sub
+
+Sub ReinitialiserChemins
+    Dim oDoc As Object
+    Dim sDocURL As String, sBaseName As String, sDir As String
+    Dim sCheminFichier As String
+
+    oDoc = ThisComponent
+    sDocURL = oDoc.URL
+    If sDocURL = "" Then
+        MsgBox "Ce document n'a pas encore été enregistré.", 48
+        Exit Sub
+    End If
+
+    sDocURL = ConvertFromURL(sDocURL)
+    sDir = Left$(sDocURL, InStrRevLO(sDocURL, "\"))
+    sBaseName = Mid$(sDocURL, InStrRevLO(sDocURL, "\") + 1)
+    sBaseName = Left$(sBaseName, InStrRevLO(sBaseName, ".") - 1)
+
+    sCheminFichier = sDir & sBaseName & ".chemins.txt"
+
+    If FileExists(sCheminFichier) Then
+        Kill sCheminFichier
+        MsgBox "Chemins réinitialisés. Vous devrez les reconfigurer lors du prochain enregistrement.", 64
+    Else
+        MsgBox "Aucun fichier de chemins à supprimer.", 48
+    End If
+End Sub
